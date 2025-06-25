@@ -40,7 +40,7 @@ export default function GuardRegisterPage() {
   const [successMessage, setSuccessMessage] = useState<string>("");
   const [formData, setFormData] = useState({
     name: "",
-    countryCode: "+33",
+    countryCode: "+221",
     phone_number: "",
     password: "",
     confirmPassword: "",
@@ -187,7 +187,7 @@ export default function GuardRegisterPage() {
         <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm w-full">
           <CardHeader className="space-y-1">
             <div className="flex items-center space-x-2">
-              <Link href="/">
+              <Link href="/guard/login">
                 <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white">
                   <ArrowLeft className="w-4 h-4" />
                 </Button>

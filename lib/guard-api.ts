@@ -79,6 +79,14 @@ export interface GuardQRScan {
   valid?: boolean
 }
 
+export interface GuardCreateResponse {
+  id: string;
+  name: string;
+  phone_number: string;
+  created_at: string;
+}
+
+
 export interface GuardStats {
   today_scans: number
   today_approved: number
@@ -195,6 +203,14 @@ class GuardApiClient {
     }
 
     return response
+  }
+
+  async createGuard(guardData: GuardCreateRequest): Promise<ApiResponse<GuardCreateResponse>> {
+    return this.handleRequest<GuardCreateResponse>("/guards/create-guard", {
+      method: "POST",
+      body: JSON.stringify(guardData),
+      headers: this.getAuthHeaders(),
+    });
   }
 
   async scanQRCode(formId: string): Promise<ApiResponse<QRScanResponse>> {
