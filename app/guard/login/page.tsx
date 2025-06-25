@@ -40,7 +40,7 @@ export default function GuardLoginPage() {
   const [errorMessage, setErrorMessage] = useState<string>("")
   const [successMessage, setSuccessMessage] = useState<string>("")
   const [formData, setFormData] = useState({
-    countryCode: "+33",
+    countryCode: "+221",
     phone_number: "",
     password: "",
   })
@@ -51,7 +51,7 @@ export default function GuardLoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // Réinitialiser les messages
+    // Reset messages
     setErrorMessage("")
     setSuccessMessage("")
 
@@ -84,7 +84,7 @@ export default function GuardLoginPage() {
         showToast(message, "error")
         window.scrollTo({ top: 0, behavior: 'smooth' })
 
-        // Recharger la page après 3 secondes
+        // Reload the page after 3 seconds
         setTimeout(() => {
           window.location.reload()
         }, 3000)
@@ -94,7 +94,7 @@ export default function GuardLoginPage() {
         showToast(message, "success")
         window.scrollTo({ top: 0, behavior: 'smooth' })
 
-        // Masquer le message après 3 secondes et rediriger
+        // Hide the message after 3 seconds and redirect
         setTimeout(() => {
           setSuccessMessage("")
           router.push('/guard/dashboard')
@@ -106,7 +106,7 @@ export default function GuardLoginPage() {
       showToast(message, "error")
       window.scrollTo({ top: 0, behavior: 'smooth' })
 
-      // Masquer le message après 3 secondes
+      // Hide the message after 3 seconds
       setTimeout(() => {
         setErrorMessage("")
       }, 3000)
@@ -117,7 +117,7 @@ export default function GuardLoginPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-800 flex items-center justify-center p-4">
-      {/* Message d'erreur fixe en haut */}
+      {/* Fixed error message at the top */}
       {errorMessage && (
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 max-w-md w-full mx-4">
           <div className="bg-red-500 text-white p-4 rounded-lg shadow-lg flex items-center justify-between">
@@ -132,14 +132,14 @@ export default function GuardLoginPage() {
               className="ml-4 text-white hover:text-red-200 flex-shrink-0"
             >
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
               </svg>
             </button>
           </div>
         </div>
       )}
 
-      {/* Message de succès fixe en haut */}
+      {/* Fixed success message at the top */}
       {successMessage && (
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 max-w-md w-full mx-4">
           <div className="bg-green-500 text-white p-4 rounded-lg shadow-lg flex items-center justify-between">
@@ -255,6 +255,12 @@ export default function GuardLoginPage() {
                 </div>
               </div>
 
+              <div className="flex items-center justify-between">
+                <Link href="/guard/forgot-password" className="text-sm text-amber-400 hover:text-amber-300">
+                  Mot de passe oublié ?
+                </Link>
+              </div>
+
               <Button
                 type="submit"
                 className="w-full bg-amber-400 text-slate-900 hover:bg-amber-500"
@@ -278,5 +284,3 @@ export default function GuardLoginPage() {
     </div>
   )
 }
-
-

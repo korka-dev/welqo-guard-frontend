@@ -1,625 +1,444 @@
-"use client";
+"use client"
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { LogOut, Shield, QrCode, Scan, Activity, Clock, User, Home, CheckCircle, XCircle, Check, X } from "lucide-react";
-import Image from "next/image";
-import { useGuardAuth } from "@/hooks/use-guard-auth";
-import { useToast } from "@/hooks/use-toast";
-import { guardApiClient } from "@/lib/guard-api";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import QrScanner from "@/components/QrScanner";
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { QrCode, Clock, History, Users, AlertTriangle, CheckCircle, LogOut, RefreshCw, User, Building, Phone, Calendar, Menu, X } from "lucide-react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { guardApiClient, type GuardStats, type GuardQRScan } from "@/lib/guard-api"
+import { GuardAuthWrapper } from "@/components/guard-auth-wrapper"
 
-interface QRScanData {
-  id: string;
-  qr_code_data: string;
-  guard_id: string;
-  form_data_id?: string;
-  confirmed?: boolean;
-  valid?: boolean;
-  scanned_at: string;
-  created_at: string;
-  updated_at: string;
-  visitor_name?: string;
-  visitor_phone?: string;
-  resident_name?: string;
-  resident_phone?: string;
-  resident_apartment?: string;
-  expires_at?: string;
-  status?: string;
-}
-
-interface QRValidationData {
-  valid: boolean;
-  message: string;
-  data?: {
-    user: {
-      name: string;
-      phone_number: string;
-      appartement: string;
-    };
-    visitor: {
-      name: string;
-      phone_number: string;
-    };
-    created_at: string;
-    expires_at: string;
-    form_id?: string;
-  };
-}
-
-export default function GuardDashboardPage() {
-  const { guard, logout, isAuthenticated, isLoading } = useGuardAuth();
-  const { showToast } = useToast();
-  const router = useRouter();
-  const [guardName, setGuardName] = useState<string>("");
-  const [scanHistory, setScanHistory] = useState<QRScanData[]>([]);
-  const [selectedScan, setSelectedScan] = useState<QRScanData | null>(null);
-  const [scanDialogOpen, setScanDialogOpen] = useState(false);
-  const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-  const [confirmationDialogOpen, setConfirmationDialogOpen] = useState(false);
-  const [pendingScan, setPendingScan] = useState<QRValidationData | null>(null);
-  const [pendingQRData, setPendingQRData] = useState<string>("");
-  const [stats, setStats] = useState({
-    todayScans: 0,
-    authorizedAccess: 0,
-    deniedAccess: 0,
-    totalScans: 0
-  });
+function GuardDashboardContent() {
+  const [currentTime, setCurrentTime] = useState(new Date())
+  const [guardName, setGuardName] = useState<string | null>(null)
+  const [stats, setStats] = useState<GuardStats | null>(null)
+  const [recentActivity, setRecentActivity] = useState<GuardQRScan[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [selectedActivity, setSelectedActivity] = useState<GuardQRScan | null>(null)
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const router = useRouter()
 
   useEffect(() => {
-    const checkAuth = () => {
-      const token = localStorage.getItem("guard_access_token");
-      const storedGuardName = localStorage.getItem("guard_name");
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
 
-      if (!token || (!isLoading && !isAuthenticated)) {
-        router.push("/guard/login");
-        return;
-      }
+  useEffect(() => {
+    const storedGuardName = guardApiClient.getStoredGuardName()
+    setGuardName(storedGuardName)
+    loadDashboardData()
+  }, [])
 
-      if (storedGuardName) {
-        setGuardName(storedGuardName);
-      } else if (guard?.name) {
-        setGuardName(guard.name);
-      }
-    };
-
-    checkAuth();
-  }, [isAuthenticated, isLoading, guard, router]);
-
-  const fetchScanHistory = async () => {
+  const loadDashboardData = async () => {
     try {
-      const response = await guardApiClient.getScanHistory();
-      if (response.status === 200 && Array.isArray(response.data)) {
-        const mappedData: QRScanData[] = response.data.map((scan: any) => ({
-          guard_id: scan.guard_id ?? "",
-          created_at: scan.created_at ?? "",
-          updated_at: scan.updated_at ?? "",
-          id: scan.id,
-          qr_code_data: scan.qr_code_data,
-          form_data_id: scan.form_data_id,
-          confirmed: scan.confirmed,
-          valid: scan.valid,
-          scanned_at: scan.scanned_at,
-          visitor_name: scan.visitor_name,
-          visitor_phone: scan.visitor_phone,
-          resident_name: scan.resident_name,
-          resident_phone: scan.resident_phone,
-          resident_apartment: scan.resident_apartment,
-          expires_at: scan.expires_at,
-          status: scan.status,
-        }));
-        setScanHistory(mappedData);
-        calculateStats(mappedData);
-      } else {
-        setScanHistory([]);
-        if (response.error) {
-          console.warn("Erreur historique:", response.error);
-        }
+      setError(null)
+      console.log("=== CHARGEMENT DONNÉES DASHBOARD ===")
+
+      const statsResponse = await guardApiClient.getGuardStats()
+      console.log("Réponse stats:", statsResponse)
+
+      if (statsResponse.error) {
+        throw new Error(statsResponse.error)
+      }
+
+      if (statsResponse.data) {
+        setStats(statsResponse.data)
+        console.log("Stats chargées:", statsResponse.data)
+      }
+
+      const activityResponse = await guardApiClient.getScanHistory(5)
+      console.log("Réponse activité récente:", activityResponse)
+
+      if (activityResponse.error) {
+        console.warn("Erreur lors du chargement de l'activité:", activityResponse.error)
+      } else if (activityResponse.data) {
+        setRecentActivity(activityResponse.data)
+        console.log("Activité récente chargée:", activityResponse.data)
       }
     } catch (error) {
-      console.error("Erreur lors de la récupération de l'historique:", error);
-      setScanHistory([]);
+      console.error("Erreur lors du chargement des données:", error)
+      setError(error instanceof Error ? error.message : "Erreur lors du chargement des données")
+    } finally {
+      setIsLoading(false)
     }
-  };
+  }
 
-  const calculateStats = (scans: QRScanData[]) => {
-    const today = new Date().toDateString();
-    const todaysScans = scans.filter(scan => {
-      const scanDate = new Date(scan.scanned_at);
-      return scanDate.toDateString() === today;
-    });
-
-    const authorized = scans.filter(scan =>
-      (scan.valid === true || scan.valid === undefined) && scan.confirmed !== false
-    );
-
-    const denied = scans.filter(scan =>
-      scan.valid === false || scan.confirmed === false
-    );
-
-    setStats({
-      todayScans: todaysScans.length,
-      authorizedAccess: authorized.length,
-      deniedAccess: denied.length,
-      totalScans: scans.length
-    });
-  };
-
-  useEffect(() => {
-    if (isAuthenticated && !isLoading) {
-      fetchScanHistory();
-    }
-  }, [isAuthenticated, isLoading]);
+  const refreshData = async () => {
+    setIsRefreshing(true)
+    await loadDashboardData()
+    setIsRefreshing(false)
+  }
 
   const handleLogout = async () => {
     try {
-      await logout();
-      showToast("Déconnexion gardien réussie", "success");
-      router.push("/");
+      await guardApiClient.logoutGuard()
+      router.push("/guard/login")
     } catch (error) {
-      console.error("Erreur lors de la déconnexion:", error);
-      showToast("Erreur lors de la déconnexion", "error");
-    }
-  };
-
-  const startCamera = () => {
-    setScanDialogOpen(true);
-  };
-
-  const stopCamera = () => {
-    setScanDialogOpen(false);
-  };
-
-  const handleScan = async (data: string | null) => {
-    if (data) {
-      try {
-        const response = await guardApiClient.scanQRCode(data);
-        if (response.status === 200 && response.data) {
-          const validationData = response.data as QRValidationData;
-          setPendingScan(validationData);
-          setPendingQRData(data);
-          setConfirmationDialogOpen(true);
-          stopCamera();
-        } else {
-          const errorMessage = response.error || "Erreur lors de la validation du QR Code";
-          showToast(errorMessage, "error");
-          stopCamera();
-        }
-      } catch (error) {
-        console.error("Erreur lors de la validation du QR Code:", error);
-        showToast("Erreur de connexion au serveur", "error");
-        stopCamera();
+      console.error("Erreur lors de la déconnexion:", error)
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("guard_access_token")
+        localStorage.removeItem("guard_name")
       }
+      router.push("/guard/login")
     }
-  };
-
-  const handleError = (err: any) => {
-    console.error(err);
-    showToast("Erreur lors du scan du QR Code", "error");
-  };
-
-  const handleConfirmAccess = async (confirmed: boolean) => {
-    if (!pendingScan || !pendingQRData) return;
-
-    try {
-      const confirmResponse = await guardApiClient.confirmScan(pendingQRData, confirmed);
-
-      if (confirmResponse.status === 200) {
-        if (confirmed && pendingScan.valid) {
-          showToast("Accès confirmé et autorisé", "success");
-        } else if (!confirmed) {
-          showToast("Accès refusé par le gardien", "error");
-        } else {
-          showToast("QR Code invalide ou expiré", "error");
-        }
-
-        setTimeout(() => {
-          fetchScanHistory();
-        }, 1000);
-      } else {
-        const errorMessage = confirmResponse.error || "Erreur lors de la confirmation";
-        showToast(errorMessage, "error");
-      }
-    } catch (error) {
-      console.error("Erreur lors de la confirmation:", error);
-      showToast("Erreur de connexion au serveur", "error");
-    } finally {
-      setConfirmationDialogOpen(false);
-      setPendingScan(null);
-      setPendingQRData("");
-    }
-  };
-
-  const openScanDetails = (scan: QRScanData) => {
-    setSelectedScan(scan);
-    setDetailsDialogOpen(true);
-  };
+  }
 
   const formatDate = (dateString: string) => {
     try {
       return new Date(dateString).toLocaleString("fr-FR", {
-        day: "numeric",
-        month: "short",
+        day: "2-digit",
+        month: "2-digit",
         year: "numeric",
         hour: "2-digit",
         minute: "2-digit",
-      });
-    } catch (error) {
-      return dateString;
+      })
+    } catch {
+      return dateString
     }
-  };
+  }
 
-  const getScanStatus = (scan: QRScanData) => {
-    if (scan.confirmed === false) return { status: "Refusé", color: "bg-red-500/20 text-red-400" };
-    if (scan.confirmed === true && (scan.valid === true || scan.valid === undefined)) {
-      return { status: "Autorisé", color: "bg-green-500/20 text-green-400" };
+  const getStatusBadge = (confirmed?: boolean) => {
+    if (confirmed === true) {
+      return <Badge className="bg-green-500 text-white">Autorisé</Badge>
+    } else if (confirmed === false) {
+      return <Badge className="bg-red-500 text-white">Refusé</Badge>
+    } else {
+      return <Badge className="bg-yellow-500 text-white">En attente</Badge>
     }
-    if (scan.valid === false) return { status: "Invalide", color: "bg-red-500/20 text-red-400" };
-    return { status: "En attente", color: "bg-yellow-500/20 text-yellow-400" };
-  };
+  }
 
-  const getScanIcon = (scan: QRScanData) => {
-    const { status } = getScanStatus(scan);
-    if (status === "Autorisé") return <CheckCircle className="w-5 h-5 text-green-400" />;
-    if (status === "Refusé" || status === "Invalide") return <XCircle className="w-5 h-5 text-red-400" />;
-    return <Clock className="w-5 h-5 text-yellow-400" />;
-  };
+  const handleActivityClick = (activity: GuardQRScan) => {
+    setSelectedActivity(activity)
+  }
+
+  const toggleMobileMenu = () => {
+    setIsMobileMenuOpen(!isMobileMenuOpen)
+  }
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-800 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin w-12 h-12 border-4 border-amber-400 border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-white text-lg">Chargement...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-400 mx-auto mb-4"></div>
+          <p className="text-slate-400">Chargement du dashboard...</p>
         </div>
       </div>
-    );
+    )
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-800">
-      <header className="border-b border-slate-700 bg-slate-800/50 backdrop-blur-sm">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2 sm:space-x-3">
-              <Image
-                src="/logo-alt.jpeg"
-                alt="Welqo Logo"
-                width={40}
-                height={40}
-                className="rounded-lg w-8 h-8 sm:w-10 sm:h-10"
-              />
-              <Shield className="w-6 h-6 text-amber-400" />
-              <div>
-                <h1 className="text-lg sm:text-xl font-bold text-white">Espace Gardien</h1>
-                <p className="text-xs sm:text-sm text-slate-400">Bienvenue, {guardName || "Gardien"}</p>
+      {/* Header responsif amélioré */}
+      <header className="bg-slate-800/50 shadow-sm border-b border-slate-700 backdrop-blur-sm sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
+          {/* Header principal */}
+          <div className="flex justify-between items-center py-3 sm:py-4">
+            {/* Logo et titre - version desktop */}
+            <div className="flex items-center space-x-2 sm:space-x-4 min-w-0">
+              <div className="flex items-center space-x-2 flex-shrink-0">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 bg-amber-400 rounded-lg flex items-center justify-center">
+                  <Users className="w-4 h-4 sm:w-5 sm:h-5 text-slate-900" />
+                </div>
+                <h1 className="text-lg sm:text-xl font-bold text-white truncate">
+                  <span className="hidden sm:inline">Dashboard Gardien</span>
+                  <span className="sm:hidden">Dashboard</span>
+                </h1>
               </div>
+              
+              {/* Badge gardien - caché sur très petits écrans */}
+              {guardName && (
+                <div className="hidden md:block flex-shrink-0">
+                  <Badge variant="outline" className="text-xs sm:text-sm bg-slate-700 text-white border-slate-600 truncate max-w-32 sm:max-w-none">
+                    {guardName}
+                  </Badge>
+                </div>
+              )}
             </div>
-            <div className="flex items-center space-x-2">
-              <Button variant="ghost" size="sm" onClick={handleLogout} className="text-slate-400 hover:text-white">
-                <LogOut className="w-4 h-4" />
+
+            {/* Actions desktop */}
+            <div className="hidden md:flex items-center space-x-2 lg:space-x-4 flex-shrink-0">
+              <div className="text-xs lg:text-sm text-slate-400 hidden lg:block">
+                {currentTime.toLocaleString("fr-FR")}
+              </div>
+              <div className="text-xs text-slate-400 lg:hidden">
+                {currentTime.toLocaleString("fr-FR", { 
+                  hour: "2-digit", 
+                  minute: "2-digit" 
+                })}
+              </div>
+              <Button 
+                onClick={refreshData} 
+                variant="outline" 
+                size="sm" 
+                disabled={isRefreshing} 
+                className="bg-slate-700 text-white hover:bg-slate-600 border-slate-600 text-xs lg:text-sm"
+              >
+                <RefreshCw className={`w-3 h-3 lg:w-4 lg:h-4 ${isRefreshing ? "animate-spin" : ""} lg:mr-2`} />
+                <span className="hidden lg:inline">Actualiser</span>
+              </Button>
+              <Button 
+                onClick={handleLogout} 
+                variant="outline" 
+                size="sm" 
+                className="bg-slate-700 text-white hover:bg-slate-600 border-slate-600 text-xs lg:text-sm"
+              >
+                <LogOut className="w-3 h-3 lg:w-4 lg:h-4 lg:mr-2" />
+                <span className="hidden lg:inline">Déconnexion</span>
+              </Button>
+            </div>
+
+            {/* Menu burger mobile */}
+            <div className="md:hidden flex items-center space-x-2">
+              <div className="text-xs text-slate-400">
+                {currentTime.toLocaleString("fr-FR", { 
+                  hour: "2-digit", 
+                  minute: "2-digit" 
+                })}
+              </div>
+              <Button
+                onClick={toggleMobileMenu}
+                variant="ghost"
+                size="sm"
+                className="text-white hover:bg-slate-700 p-2"
+              >
+                {isMobileMenuOpen ? (
+                  <X className="w-5 h-5" />
+                ) : (
+                  <Menu className="w-5 h-5" />
+                )}
               </Button>
             </div>
           </div>
+
+          {/* Menu mobile déroulant */}
+          {isMobileMenuOpen && (
+            <div className="md:hidden border-t border-slate-700 py-3 space-y-3">
+              {/* Badge gardien sur mobile */}
+              {guardName && (
+                <div className="flex justify-center">
+                  <Badge variant="outline" className="text-sm bg-slate-700 text-white border-slate-600">
+                    Connecté: {guardName}
+                  </Badge>
+                </div>
+              )}
+              
+              {/* Actions mobile */}
+              <div className="flex flex-col space-y-2 px-2">
+                <Button 
+                  onClick={() => {
+                    refreshData()
+                    setIsMobileMenuOpen(false)
+                  }} 
+                  variant="outline" 
+                  size="sm" 
+                  disabled={isRefreshing} 
+                  className="bg-slate-700 text-white hover:bg-slate-600 border-slate-600 w-full justify-start"
+                >
+                  <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
+                  Actualiser les données
+                </Button>
+                <Button 
+                  onClick={() => {
+                    handleLogout()
+                    setIsMobileMenuOpen(false)
+                  }} 
+                  variant="outline" 
+                  size="sm" 
+                  className="bg-slate-700 text-white hover:bg-slate-600 border-slate-600 w-full justify-start"
+                >
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Se déconnecter
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold text-white mb-2">Bonjour, {guardName || "Gardien"} 🛡️</h2>
-          <p className="text-slate-300">Gérez le contrôle d'accès et validez les codes QR des visiteurs.</p>
-        </div>
+      {/* Contenu principal */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {error && (
+          <Alert variant="destructive" className="mb-6 bg-red-500 border-red-600 text-white">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              {error}
+              <Button onClick={refreshData} variant="outline" size="sm" className="ml-4 bg-slate-700 text-white hover:bg-slate-600">
+                Réessayer
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-slate-400">Scans Aujourd'hui</CardTitle>
-              <QrCode className="h-4 w-4 text-amber-400" />
+              <CardTitle className="text-sm font-medium text-white">Scans Aujourd'hui</CardTitle>
+              <QrCode className="h-4 w-4 text-slate-400" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-white">{stats.todayScans}</div>
-              <p className="text-xs text-slate-400">Codes QR scannés</p>
+              <div className="text-2xl font-bold text-white">{stats?.today_scans || 0}</div>
+              <p className="text-xs text-slate-400">Total des scans effectués</p>
             </CardContent>
           </Card>
 
           <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-slate-400">Accès Autorisés</CardTitle>
-              <CheckCircle className="h-4 w-4 text-green-400" />
+              <CardTitle className="text-sm font-medium text-white">Accès Autorisés</CardTitle>
+              <CheckCircle className="h-4 w-4 text-green-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-400">{stats.authorizedAccess}</div>
-              <p className="text-xs text-slate-400">Accès valides</p>
+              <div className="text-2xl font-bold text-green-500">{stats?.today_approved || 0}</div>
+              <p className="text-xs text-slate-400">Visiteurs autorisés</p>
             </CardContent>
           </Card>
 
           <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-slate-400">Accès Refusés</CardTitle>
-              <XCircle className="h-4 w-4 text-red-400" />
+              <CardTitle className="text-sm font-medium text-white">Accès Refusés</CardTitle>
+              <AlertTriangle className="h-4 w-4 text-red-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-400">{stats.deniedAccess}</div>
+              <div className="text-2xl font-bold text-red-500">{stats?.today_denied || 0}</div>
               <p className="text-xs text-slate-400">Accès refusés</p>
             </CardContent>
           </Card>
 
           <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-slate-400">Statut Service</CardTitle>
-              <Shield className="h-4 w-4 text-green-400" />
+              <CardTitle className="text-sm font-medium text-white">Taux de Réussite</CardTitle>
+              <Clock className="h-4 w-4 text-blue-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-400">En Service</div>
-              <p className="text-xs text-slate-400">Système actif</p>
+              <div className="text-2xl font-bold text-blue-500">
+                {stats && stats.today_scans && stats.today_scans > 0
+                  ? `${Math.round((stats.today_approved || 0) / stats.today_scans * 100)}%`
+                  : "0%"}
+              </div>
+              <p className="text-xs text-slate-400">Scans validés avec succès</p>
             </CardContent>
           </Card>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="mb-6">
+          <Link href="/guard/scan-qr">
+            <Button className="w-full bg-amber-400 text-slate-900 hover:bg-amber-500">
+              Accéder au Scanner
+            </Button>
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-1">
           <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm">
             <CardHeader>
-              <CardTitle className="text-white flex items-center space-x-2">
-                <Scan className="w-5 h-5 text-amber-400" />
-                <span>Scanner QR Code</span>
-              </CardTitle>
+              <CardTitle className="text-white">Activité Récente</CardTitle>
               <CardDescription className="text-slate-400">
-                Scannez les codes QR des visiteurs pour valider leur accès
+                Derniers scans et validations effectués
+                {recentActivity.length > 0 && ` (${recentActivity.length} entrées)`}
               </CardDescription>
             </CardHeader>
-            <CardContent className="text-center space-y-6">
-              <div className="w-32 h-32 mx-auto bg-slate-700 rounded-lg border-2 border-dashed border-slate-600 flex items-center justify-center">
-                <QrCode className="w-16 h-16 text-slate-400" />
-              </div>
-
-              <Button
-                onClick={startCamera}
-                className="w-full bg-amber-400 text-slate-900 hover:bg-amber-500"
-              >
-                <Scan className="w-4 h-4 mr-2" />
-                Scanner un QR Code
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="lg:col-span-2 bg-slate-800/50 border-slate-700 backdrop-blur-sm">
-            <CardHeader>
-              <CardTitle className="text-white flex items-center space-x-2">
-                <Activity className="w-5 h-5 text-amber-400" />
-                <span>Activités Récentes</span>
-              </CardTitle>
-              <CardDescription className="text-slate-400">Historique des derniers codes QR scannés</CardDescription>
-            </CardHeader>
             <CardContent>
-              {scanHistory.length === 0 ? (
-                <div className="text-center py-8">
-                  <QrCode className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-                  <p className="text-slate-400">Aucun scan effectué</p>
-                  <p className="text-sm text-slate-500 mt-2">Les scans apparaîtront ici</p>
+              {recentActivity.length === 0 ? (
+                <div className="text-center py-8 text-slate-400">
+                  <History className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>Aucune activité récente</p>
+                  <p className="text-sm">Commencez par scanner un code QR</p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {scanHistory.slice(0, 5).map((scan) => {
-                    const { status, color } = getScanStatus(scan);
-                    return (
-                      <div
-                        key={scan.id}
-                        className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg cursor-pointer hover:bg-slate-700/70 transition-colors"
-                        onClick={() => openScanDetails(scan)}
-                      >
-                        <div className="flex items-center space-x-3">
-                          {getScanIcon(scan)}
-                          <div>
-                            <p className="text-white font-medium">{scan.visitor_name || "Visiteur inconnu"}</p>
-                            <p className="text-sm text-slate-400">{scan.visitor_phone || "Téléphone non disponible"}</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <Badge className={color}>
-                            {status}
-                          </Badge>
-                          <p className="text-xs text-slate-400 mt-1">{formatDate(scan.scanned_at)}</p>
+                <div className="space-y-4">
+                  {recentActivity.map((activity) => (
+                    <div key={activity.id} onClick={() => handleActivityClick(activity)} className="flex items-center justify-between p-3 bg-slate-700 rounded-lg cursor-pointer hover:bg-slate-600">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-2 h-2 rounded-full bg-amber-400"></div>
+                        <div>
+                          <p className="font-medium text-sm text-white">{activity.visitor_name || "Visiteur"}</p>
+                          <p className="text-sm text-slate-400">
+                            {activity.resident_name && `Visite chez ${activity.resident_name}`}
+                            {activity.resident_apartment && ` - Apt ${activity.resident_apartment}`}
+                          </p>
                         </div>
                       </div>
-                    );
-                  })}
+                      <div className="flex items-center space-x-2">
+                        {getStatusBadge(activity.confirmed)}
+                        <span className="text-sm text-slate-400">{formatDate(activity.scanned_at)}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
-      </main>
 
-      <QrScanner
-        isOpen={scanDialogOpen}
-        onClose={stopCamera}
-        onScan={handleScan}
-        onError={handleError}
-      />
-
-      <Dialog open={confirmationDialogOpen} onOpenChange={setConfirmationDialogOpen}>
-        <DialogContent className="bg-slate-800 border-slate-700 text-white max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-white">Confirmation d'Accès</DialogTitle>
-            <DialogDescription className="text-slate-400">
-              Veuillez confirmer ou refuser l'accès pour ce visiteur
-            </DialogDescription>
-          </DialogHeader>
-
-          {pendingScan && (
-            <div className="space-y-6">
-              <div className="text-center">
-                {pendingScan.valid ? (
-                  <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-2" />
-                ) : (
-                  <XCircle className="w-16 h-16 text-red-400 mx-auto mb-2" />
-                )}
-                <Badge className={pendingScan.valid ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}>
-                  {pendingScan.valid ? "QR Code Valide" : "QR Code Invalide"}
-                </Badge>
-                <p className="text-sm text-slate-400 mt-2">
-                  {pendingScan.message}
-                </p>
-              </div>
-
-              {pendingScan.data && (
-                <>
-                  <div className="bg-slate-700/50 p-4 rounded-lg space-y-3">
-                    <h4 className="text-white font-semibold flex items-center space-x-2">
-                      <User className="w-4 h-4 text-amber-400" />
-                      <span>Visiteur</span>
-                    </h4>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Nom:</span>
-                        <span className="text-white">{pendingScan.data.visitor.name}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Téléphone:</span>
-                        <span className="text-white">{pendingScan.data.visitor.phone_number}</span>
-                      </div>
+        {selectedActivity && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <Card className="bg-slate-800/90 border-slate-700 backdrop-blur-sm w-full max-w-lg">
+              <CardHeader>
+                <CardTitle className="text-white">Détails de l'activité</CardTitle>
+                <CardDescription className="text-slate-400">
+                  Détails complets de l'activité sélectionnée
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-3">
+                    <User className="w-4 h-4 text-amber-400" />
+                    <div>
+                      <p className="font-medium text-sm text-white">Nom du visiteur</p>
+                      <p className="text-sm text-slate-400">{selectedActivity.visitor_name || "Visiteur"}</p>
                     </div>
                   </div>
-
-                  <div className="bg-slate-700/50 p-4 rounded-lg space-y-3">
-                    <h4 className="text-white font-semibold flex items-center space-x-2">
-                      <Home className="w-4 h-4 text-amber-400" />
-                      <span>Résident</span>
-                    </h4>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Nom:</span>
-                        <span className="text-white">{pendingScan.data.user.name}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Appartement:</span>
-                        <span className="text-white">{pendingScan.data.user.appartement}</span>
-                      </div>
+                  <div className="flex items-center space-x-3">
+                    <Phone className="w-4 h-4 text-amber-400" />
+                    <div>
+                      <p className="font-medium text-sm text-white">Téléphone du visiteur</p>
+                      <p className="text-sm text-slate-400">{selectedActivity.visitor_phone || "Non spécifié"}</p>
                     </div>
                   </div>
-
-                  <div className="bg-slate-700/50 p-4 rounded-lg space-y-3">
-                    <h4 className="text-white font-semibold flex items-center space-x-2">
-                      <Clock className="w-4 h-4 text-amber-400" />
-                      <span>Validité</span>
-                    </h4>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Créé le:</span>
-                        <span className="text-white">{formatDate(pendingScan.data.created_at)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Expire le:</span>
-                        <span className="text-white">{formatDate(pendingScan.data.expires_at)}</span>
-                      </div>
+                  <div className="flex items-center space-x-3">
+                    <Building className="w-4 h-4 text-amber-400" />
+                    <div>
+                      <p className="font-medium text-sm text-white">Résident</p>
+                      <p className="text-sm text-slate-400">{selectedActivity.resident_name || "Non spécifié"}</p>
                     </div>
                   </div>
-                </>
-              )}
-            </div>
-          )}
-
-          <DialogFooter className="flex space-x-2">
-            <Button
-              onClick={() => handleConfirmAccess(false)}
-              variant="outline"
-              className="flex-1 border-red-500 text-red-400 hover:bg-red-500/10"
-            >
-              <X className="w-4 h-4 mr-2" />
-              Refuser
-            </Button>
-            <Button
-              onClick={() => handleConfirmAccess(true)}
-              className="flex-1 bg-green-600 hover:bg-green-700"
-              disabled={!pendingScan?.valid}
-            >
-              <Check className="w-4 h-4 mr-2" />
-              Autoriser
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={detailsDialogOpen} onOpenChange={setDetailsDialogOpen}>
-        <DialogContent className="bg-slate-800 border-slate-700 text-white max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-white">Détails du Scan</DialogTitle>
-            <DialogDescription className="text-slate-400">Informations complètes du code QR scanné</DialogDescription>
-          </DialogHeader>
-
-          {selectedScan && (
-            <div className="space-y-6">
-              <div className="text-center">
-                {getScanIcon(selectedScan)}
-                <Badge className={getScanStatus(selectedScan).color}>
-                  {getScanStatus(selectedScan).status}
-                </Badge>
-              </div>
-
-              <div className="bg-slate-700/50 p-4 rounded-lg space-y-3">
-                <h4 className="text-white font-semibold flex items-center space-x-2">
-                  <User className="w-4 h-4 text-amber-400" />
-                  <span>Informations Visiteur</span>
-                </h4>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Nom:</span>
-                    <span className="text-white">{selectedScan.visitor_name || "Non disponible"}</span>
+                  <div className="flex items-center space-x-3">
+                    <Calendar className="w-4 h-4 text-amber-400" />
+                    <div>
+                      <p className="font-medium text-sm text-white">Date de scan</p>
+                      <p className="text-sm text-slate-400">{formatDate(selectedActivity.scanned_at)}</p>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Téléphone:</span>
-                    <span className="text-white">{selectedScan.visitor_phone || "Non disponible"}</span>
+                  <div className="flex items-center space-x-3">
+                    <Clock className="w-4 h-4 text-amber-400" />
+                    <div>
+                      <p className="font-medium text-sm text-white">Statut</p>
+                      <div className="text-sm text-slate-400">
+                        {getStatusBadge(selectedActivity.confirmed)}
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-
-              <div className="bg-slate-700/50 p-4 rounded-lg space-y-3">
-                <h4 className="text-white font-semibold flex items-center space-x-2">
-                  <Home className="w-4 h-4 text-amber-400" />
-                  <span>Informations Résident</span>
-                </h4>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Nom:</span>
-                    <span className="text-white">{selectedScan.resident_name || "Non disponible"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Téléphone:</span>
-                    <span className="text-white">{selectedScan.resident_phone || "Non disponible"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Appartement:</span>
-                    <span className="text-white">{selectedScan.resident_apartment || "Non disponible"}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-slate-700/50 p-4 rounded-lg space-y-3">
-                <h4 className="text-white font-semibold flex items-center space-x-2">
-                  <Clock className="w-4 h-4 text-amber-400" />
-                  <span>Informations Temporelles</span>
-                </h4>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Scanné le:</span>
-                    <span className="text-white">{formatDate(selectedScan.scanned_at)}</span>
-                  </div>
-                  {selectedScan.expires_at && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Expire le:</span>
-                      <span className="text-white">{formatDate(selectedScan.expires_at)}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+                <Button onClick={() => setSelectedActivity(null)} className="mt-4 bg-amber-400 text-slate-900 hover:bg-amber-500">
+                  Fermer
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+      </div>
     </div>
-  );
+  )
+}
+
+export default function GuardDashboard() {
+  return (
+    <GuardAuthWrapper>
+      <GuardDashboardContent />
+    </GuardAuthWrapper>
+  )
 }
