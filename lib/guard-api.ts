@@ -269,10 +269,22 @@ class GuardApiClient {
     })
   }
 
-  // Déconnexion
-  async logoutGuard(): Promise<void> {
-    this.removeToken()
+   async logoutGuard(): Promise<void> {
+    try {
+      // Call the logout endpoint to invalidate the token on the server
+      await this.handleRequest("/guard/logout", {
+        method: "POST",
+        headers: this.getAuthHeaders(),
+      });
+    } catch (error) {
+      console.error("Error during logout:", error);
+    } finally {
+      // Remove the token from local storage and the client
+      this.removeToken();
+    }
   }
+
+
 
   // Utility Methods
   isAuthenticated(): boolean {
